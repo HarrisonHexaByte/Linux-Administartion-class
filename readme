@@ -1,0 +1,10 @@
+# Linux Administration Project
+
+This project documents the setup of two Linux servers (CentOS and Debian) on VirtualBox.  
+It includes installation steps, software and configuration details, and file sharing using **WinSCP**.
+
+## Deliverables
+- [Installation Guide](docs/install_guide.md)
+- [Software & Configurations](docs/software_config.md)
+- [File Sharing with WinSCP](docs/file_sharing.md)
+
