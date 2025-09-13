@@ -48,3 +48,6 @@ User name: your Linux username
 Password: your Linux password
 
 Click Save, then Login.
+
+![Screenshot: WinSCP Install](../screenshots/centwinscp.png)
+![Screenshot: WinSCP Install](../screenshots/centwinscp1.png)
