@@ -8,7 +8,6 @@
 - Debian: https://www.debian.org/distrib/
   ![Screenshot: ISO Downloads1](debian_download.png)
 
-![Screenshot: ISO Downloads2](cent_download.png)
 
 ---
 
