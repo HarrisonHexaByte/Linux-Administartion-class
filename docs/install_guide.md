@@ -1,10 +1,14 @@
 # Installing CentOS and Debian on VirtualBox
 
-## Step 1: Download ISOs
+## Step 1: Download ISOs and virtual box
+- Virtal box download: https://www.virtualbox.org/wiki/Downloads
+  ![Screenshot: ISO Downloads2](virtualbox_download.png)
 - CentOS Stream: https://www.centos.org/download/
+  ![Screenshot: ISO Downloads2](cent_download.png)
 - Debian: https://www.debian.org/distrib/
+  ![Screenshot: ISO Downloads1](debian_download.png)
 
-![Screenshot: ISO Downloads](debiandownload.png)
+![Screenshot: ISO Downloads2](cent_download.png)
 
 ---
 
