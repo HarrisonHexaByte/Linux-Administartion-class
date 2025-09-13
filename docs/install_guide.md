@@ -2,11 +2,11 @@
 
 ## Step 1: Download ISOs and virtual box
 - Virtal box download: https://www.virtualbox.org/wiki/Downloads
-  ![Screenshot: ISO Downloads2](virtualbox_download.png)
+  ![Screenshot: ISO Downloads2](../screenshots/virtualbox_download.png)
 - CentOS Stream: https://www.centos.org/download/
-  ![Screenshot: ISO Downloads2](cent_download.png)
+  ![Screenshot: ISO Downloads2](../screenshots/cent_download.png)
 - Debian: https://www.debian.org/distrib/
-  ![Screenshot: ISO Downloads1](debian_download.png)
+  ![Screenshot: ISO Downloads1](../screenshots/debian_download.png)
 
 
 ---
@@ -18,9 +18,18 @@
   - **Version:** Red Hat (64-bit) for CentOS, Debian (64-bit) for Debian
   - **Memory:** 8 GB
   - **Disk:** 20 GB
+    
+CentOS install:
 
-![Screenshot: VM Creation](../screenshots/vm_creation.png)
-![Screenshot: VM Creation](../screenshots/vm_creation.png)
+![Screenshot: VM Creation](../screenshots/centinstall.png)
+
+Debian install:
+
+![Screenshot: VM Creation](../screenshots/debianinstall.png)
+
+Base memory and processors:
+
+![Screenshot: VM Creation](../screenshots/base_memoryandprocessors.png)
 
 ---
 
@@ -31,7 +40,15 @@
   - Accept default disk settings
   - Create root + user accounts
 
-![Screenshot: Installer](../screenshots/installer.png)
+![Screenshot: Installer](../screenshots/centstorage.png)
+
+![Screenshot: Installer](../screenshots/cent1.png)
+
+![Screenshot: Installer](../screenshots/cent2.png)
+
+![Screenshot: Installer](../screenshots/centroot.png)
+
+![Screenshot: Installer](../screenshots/centuser.png)
 
 ---
 
