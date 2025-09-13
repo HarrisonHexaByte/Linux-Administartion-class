@@ -4,8 +4,8 @@
 - CentOS Stream: https://www.centos.org/download/
 - Debian: https://www.debian.org/distrib/
 
-![Screenshot: ISO Downloads](cent download.png)
-![Screenshot: ISO Downloads](debian download.png)
+![Screenshot: ISO Downloads](../screenshots/iso_download.png)
+
 ---
 
 ## Step 2: Create Virtual Machines
