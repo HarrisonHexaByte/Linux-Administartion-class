@@ -4,7 +4,7 @@
 - CentOS Stream: https://www.centos.org/download/
 - Debian: https://www.debian.org/distrib/
 
-![Screenshot: ISO Downloads](../screenshots/iso_download.png)
+![Screenshot: ISO Downloads](debiandownload.png)
 
 ---
 
