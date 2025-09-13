@@ -16,9 +16,10 @@
 - Example settings:
   - **Type:** Linux
   - **Version:** Red Hat (64-bit) for CentOS, Debian (64-bit) for Debian
-  - **Memory:** 2 GB
+  - **Memory:** 8 GB
   - **Disk:** 20 GB
 
+![Screenshot: VM Creation](../screenshots/vm_creation.png)
 ![Screenshot: VM Creation](../screenshots/vm_creation.png)
 
 ---
