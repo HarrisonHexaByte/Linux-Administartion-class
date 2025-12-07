@@ -1,0 +1,226 @@
+#!/usr/bin/env bash
+#
+# Basic Cyber Security Hardening Script for CentOS 7/8
+# Use at your own risk – READ and EDIT before running on a real server.
+#
+
+set -euo pipefail
+
+### 0. Safety checks ###########################################################
+
+if [[ $EUID -ne 0 ]]; then
+    echo "[-] This script must be run as root."
+    exit 1
+fi
+
+echo "[+] Starting basic hardening for CentOS..."
+
+# Detect CentOS version (7 vs 8+)
+CENTOS_VER=$(rpm -q --queryformat '%{VERSION}' centos-release 2>/dev/null || echo "unknown")
+echo "[+] Detected CentOS version: $CENTOS_VER"
+
+### 1. System update & useful tools ###########################################
+
+echo "[+] Updating system and installing basic tools..."
+
+if command -v dnf >/dev/null 2>&1; then
+    PKG_MGR="dnf"
+else
+    PKG_MGR="yum"
+fi
+
+$PKG_MGR -y update
+$PKG_MGR -y install epel-release
+$PKG_MGR -y install vim-enhanced git wget curl net-tools htop fail2ban
+
+echo "[+] Base packages installed."
+
+### 2. Enable automatic security updates ######################################
+
+echo "[+] Setting up automatic (security) updates..."
+
+if [[ "$PKG_MGR" == "yum" ]]; then
+    # CentOS 7 typically
+    $PKG_MGR -y install yum-cron
+    sed -i.bak 's/^apply_updates = .*/apply_updates = yes/' /etc/yum/yum-cron.conf
+    sed -i.bak 's/^update_cmd = .*/update_cmd = security/' /etc/yum/yum-cron.conf
+    systemctl enable yum-cron
+    systemctl start yum-cron
+else
+    # CentOS 8 / Stream – dnf-automatic
+    $PKG_MGR -y install dnf-automatic
+    sed -i.bak 's/apply_updates = .*/apply_updates = yes/' /etc/dnf/automatic.conf
+    systemctl enable --now dnf-automatic.timer
+fi
+
+echo "[+] Automatic updates configured."
+
+### 3. Firewall configuration (firewalld) #####################################
+
+echo "[+] Configuring firewalld..."
+
+$PKG_MGR -y install firewalld
+systemctl enable firewalld
+systemctl start firewalld
+
+# Allow SSH
+firewall-cmd --permanent --add-service=ssh
+
+# Uncomment these if this is a web server
+# firewall-cmd --permanent --add-service=http
+# firewall-cmd --permanent --add-service=https
+
+# Reload firewall to apply changes
+firewall-cmd --reload
+
+echo "[+] Firewalld configured. SSH allowed; HTTP/HTTPS commented by default."
+
+### 4. SSH hardening ##########################################################
+
+echo "[+] Hardening SSH configuration..."
+
+SSHD_CONFIG="/etc/ssh/sshd_config"
+
+# Backup
+cp "$SSHD_CONFIG" "${SSHD_CONFIG}.bak.$(date +%F_%T)"
+
+# Basic secure defaults
+sed -i 's/^#\?Protocol .*/Protocol 2/' "$SSHD_CONFIG"
+sed -i 's/^#\?X11Forwarding .*/X11Forwarding no/' "$SSHD_CONFIG"
+sed -i 's/^#\?UseDNS .*/UseDNS no/' "$SSHD_CONFIG"
+sed -i 's/^#\?PermitEmptyPasswords .*/PermitEmptyPasswords no/' "$SSHD_CONFIG"
+
+# Disable root login (recommended)
+# NOTE: Make sure you have a non-root user with sudo before enabling this.
+if grep -q "^PermitRootLogin" "$SSHD_CONFIG"; then
+    sed -i 's/^PermitRootLogin.*/PermitRootLogin no/' "$SSHD_CONFIG"
+else
+    echo "PermitRootLogin no" >> "$SSHD_CONFIG"
+fi
+
+# (Optional, safer) – restrict to key-based auth:
+# ONLY enable this once you have SSH keys working.
+# if grep -q "^PasswordAuthentication" "$SSHD_CONFIG"; then
+#     sed -i 's/^PasswordAuthentication.*/PasswordAuthentication no/' "$SSHD_CONFIG"
+# else
+#     echo "PasswordAuthentication no" >> "$SSHD_CONFIG"
+# fi
+
+systemctl reload sshd
+echo "[+] SSH configuration hardened (root login disabled)."
+
+### 5. Fail2ban configuration (protect SSH) ###################################
+
+echo "[+] Configuring fail2ban for SSH..."
+
+# Basic jail configuration
+cat >/etc/fail2ban/jail.local <<'EOF'
+[DEFAULT]
+bantime  = 1h
+findtime = 10m
+maxretry = 5
+backend  = systemd
+destemail = root@localhost
+sender = fail2ban@localhost
+mta = sendmail
+
+[sshd]
+enabled  = true
+port     = ssh
+filter   = sshd
+logpath  = /var/log/secure
+maxretry = 5
+EOF
+
+systemctl enable fail2ban
+systemctl restart fail2ban
+
+echo "[+] Fail2ban enabled and protecting SSH."
+
+### 6. Password policy & lockout ##############################################
+
+echo "[+] Setting basic password policy..."
+
+# /etc/login.defs – password aging
+sed -i.bak \
+    -e 's/^PASS_MAX_DAYS.*/PASS_MAX_DAYS   90/' \
+    -e 's/^PASS_MIN_DAYS.*/PASS_MIN_DAYS   1/' \
+    -e 's/^PASS_WARN_AGE.*/PASS_WARN_AGE   7/' \
+    /etc/login.defs
+
+# Enforce password complexity via pam_pwquality
+if grep -q "pam_pwquality.so" /etc/pam.d/system-auth; then
+    sed -i 's/^password    requisite     pam_pwquality.so.*/password    requisite     pam_pwquality.so try_first_pass local_users_only retry=3 authtok_type=/' /etc/pam.d/system-auth
+else
+    echo "password    requisite     pam_pwquality.so try_first_pass local_users_only retry=3 authtok_type=" >> /etc/pam.d/system-auth
+fi
+
+echo "[+] Password policy updated (aging + basic complexity)."
+
+### 7. Enable and configure auditd ############################################
+
+echo "[+] Enabling auditd..."
+
+$PKG_MGR -y install audit
+systemctl enable auditd
+systemctl start auditd
+
+# Example of a simple audit rule: watch /etc/passwd changes
+cat >/etc/audit/rules.d/hardening.rules <<'EOF'
+-w /etc/passwd -p wa -k passwd_changes
+-w /etc/shadow -p wa -k shadow_changes
+-w /etc/sudoers -p wa -k sudoers_changes
+EOF
+
+augenrules --load
+
+echo "[+] Auditd enabled with some basic rules."
+
+### 8. Network sysctl hardening ###############################################
+
+echo "[+] Applying basic network sysctl hardening..."
+
+SYSCTL_FILE="/etc/sysctl.d/99-hardening.conf"
+
+cat >"$SYSCTL_FILE" <<'EOF'
+# Enable SYN cookies
+net.ipv4.tcp_syncookies = 1
+
+# Ignore broadcast ICMP (avoid smurf attack)
+net.ipv4.icmp_echo_ignore_broadcasts = 1
+
+# Disable source routing
+net.ipv4.conf.all.accept_source_route = 0
+net.ipv4.conf.default.accept_source_route = 0
+
+# Disable ICMP redirects
+net.ipv4.conf.all.accept_redirects = 0
+net.ipv4.conf.default.accept_redirects = 0
+
+# Log suspicious packets
+net.ipv4.conf.all.log_martians = 1
+net.ipv4.conf.default.log_martians = 1
+EOF
+
+sysctl --system
+
+echo "[+] Network sysctl hardening applied."
+
+### 9. Summary #################################################################
+
+echo
+echo "==================== HARDENING COMPLETE ===================="
+echo "Changes made:"
+echo " - System updated and basic tools installed"
+echo " - Automatic security updates enabled"
+echo " - Firewalld enabled; SSH allowed (HTTP/HTTPS commented out)"
+echo " - SSH locked down (root login disabled, safer defaults)"
+echo " - Fail2ban protecting SSH"
+echo " - Password aging & complexity updated"
+echo " - Auditd enabled with basic file watches"
+echo " - Network sysctl hardening applied"
+echo
+echo "IMPORTANT:"
+echo " - Review /etc/ssh/sshd_config before locking out password auth."
+echo " - Test everything in a VM or lab box before using in production."
+echo "============================================================"
