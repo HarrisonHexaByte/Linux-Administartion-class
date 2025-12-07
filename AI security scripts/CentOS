@@ -1,21 +1,28 @@
 #!/usr/bin/env bash
+# Use the system's environment to run bash safely.
+
 #
 # Basic Cyber Security Hardening Script for CentOS 7/8
-# Use at your own risk – READ and EDIT before running on a real server.
+# WARNING: Always test in a VM or lab server before using on production.
 #
 
 set -euo pipefail
+# -e  Exit script immediately if a command fails
+# -u  Treat unset variables as errors
+# -o pipefail  Causes pipes to return the exit status of the first failed command
+# This prevents half-executed scripts and silently ignored failures.
 
 ### 0. Safety checks ###########################################################
 
 if [[ $EUID -ne 0 ]]; then
+    # Check if script is run as root; security tools require root privileges.
     echo "[-] This script must be run as root."
     exit 1
 fi
 
 echo "[+] Starting basic hardening for CentOS..."
 
-# Detect CentOS version (7 vs 8+)
+# Detect CentOS version (7 vs 8) by querying the centos-release package.
 CENTOS_VER=$(rpm -q --queryformat '%{VERSION}' centos-release 2>/dev/null || echo "unknown")
 echo "[+] Detected CentOS version: $CENTOS_VER"
 
@@ -23,14 +30,20 @@ echo "[+] Detected CentOS version: $CENTOS_VER"
 
 echo "[+] Updating system and installing basic tools..."
 
+# Detect if system uses dnf (CentOS 8) or yum (CentOS 7)
 if command -v dnf >/dev/null 2>&1; then
     PKG_MGR="dnf"
 else
     PKG_MGR="yum"
 fi
 
+# Update all installed packages (very important for security).
 $PKG_MGR -y update
+
+# Install Extra Packages for Enterprise Linux (EPEL repo).
 $PKG_MGR -y install epel-release
+
+# Install basic tools useful in admin/security.
 $PKG_MGR -y install vim-enhanced git wget curl net-tools htop fail2ban
 
 echo "[+] Base packages installed."
@@ -39,16 +52,20 @@ echo "[+] Base packages installed."
 
 echo "[+] Setting up automatic (security) updates..."
 
+# CentOS 7 method (yum-cron)
 if [[ "$PKG_MGR" == "yum" ]]; then
-    # CentOS 7 typically
     $PKG_MGR -y install yum-cron
+    # Enable automatic installs
     sed -i.bak 's/^apply_updates = .*/apply_updates = yes/' /etc/yum/yum-cron.conf
+    # Security-only update mode
     sed -i.bak 's/^update_cmd = .*/update_cmd = security/' /etc/yum/yum-cron.conf
     systemctl enable yum-cron
     systemctl start yum-cron
+
+# CentOS 8+ method (dnf-automatic)
 else
-    # CentOS 8 / Stream – dnf-automatic
     $PKG_MGR -y install dnf-automatic
+    # Turn on automatic updates
     sed -i.bak 's/apply_updates = .*/apply_updates = yes/' /etc/dnf/automatic.conf
     systemctl enable --now dnf-automatic.timer
 fi
@@ -59,18 +76,19 @@ echo "[+] Automatic updates configured."
 
 echo "[+] Configuring firewalld..."
 
+# Install, enable, and start firewalld.
 $PKG_MGR -y install firewalld
 systemctl enable firewalld
 systemctl start firewalld
 
-# Allow SSH
+# Allow SSH so you don’t lock yourself out.
 firewall-cmd --permanent --add-service=ssh
 
-# Uncomment these if this is a web server
+# Optional web ports (commented until needed).
 # firewall-cmd --permanent --add-service=http
 # firewall-cmd --permanent --add-service=https
 
-# Reload firewall to apply changes
+# Reload firewall to apply changes.
 firewall-cmd --reload
 
 echo "[+] Firewalld configured. SSH allowed; HTTP/HTTPS commented by default."
@@ -81,31 +99,33 @@ echo "[+] Hardening SSH configuration..."
 
 SSHD_CONFIG="/etc/ssh/sshd_config"
 
-# Backup
+# Backup SSH config so you can recover if locked out.
 cp "$SSHD_CONFIG" "${SSHD_CONFIG}.bak.$(date +%F_%T)"
 
-# Basic secure defaults
+# Force SSH protocol 2 (more secure than deprecated protocol 1).
 sed -i 's/^#\?Protocol .*/Protocol 2/' "$SSHD_CONFIG"
+
+# Disable X11 forwarding (attack vector for GUI tunneling).
 sed -i 's/^#\?X11Forwarding .*/X11Forwarding no/' "$SSHD_CONFIG"
+
+# Disable DNS lookups for connecting clients (prevents delays & spoofing).
 sed -i 's/^#\?UseDNS .*/UseDNS no/' "$SSHD_CONFIG"
+
+# Prevent empty passwords from being used.
 sed -i 's/^#\?PermitEmptyPasswords .*/PermitEmptyPasswords no/' "$SSHD_CONFIG"
 
-# Disable root login (recommended)
-# NOTE: Make sure you have a non-root user with sudo before enabling this.
+# Disable direct root login — critical for strong security.
 if grep -q "^PermitRootLogin" "$SSHD_CONFIG"; then
     sed -i 's/^PermitRootLogin.*/PermitRootLogin no/' "$SSHD_CONFIG"
 else
     echo "PermitRootLogin no" >> "$SSHD_CONFIG"
 fi
 
-# (Optional, safer) – restrict to key-based auth:
-# ONLY enable this once you have SSH keys working.
-# if grep -q "^PasswordAuthentication" "$SSHD_CONFIG"; then
-#     sed -i 's/^PasswordAuthentication.*/PasswordAuthentication no/' "$SSHD_CONFIG"
-# else
-#     echo "PasswordAuthentication no" >> "$SSHD_CONFIG"
-# fi
+# OPTIONAL (commented): disable password authentication entirely.
+# This requires SSH keys to be already working.
+# sed -i 's/^PasswordAuthentication.*/PasswordAuthentication no/' "$SSHD_CONFIG"
 
+# Apply SSH changes.
 systemctl reload sshd
 echo "[+] SSH configuration hardened (root login disabled)."
 
@@ -113,25 +133,26 @@ echo "[+] SSH configuration hardened (root login disabled)."
 
 echo "[+] Configuring fail2ban for SSH..."
 
-# Basic jail configuration
+# Create fail2ban jail.local file.
 cat >/etc/fail2ban/jail.local <<'EOF'
 [DEFAULT]
-bantime  = 1h
-findtime = 10m
-maxretry = 5
-backend  = systemd
+bantime  = 1h           # How long an attacker is banned
+findtime = 10m          # Time window to track login attempts
+maxretry = 5            # How many failed attempts allowed
+backend  = systemd      # Uses system logs
 destemail = root@localhost
 sender = fail2ban@localhost
 mta = sendmail
 
 [sshd]
-enabled  = true
-port     = ssh
-filter   = sshd
+enabled  = true         # Turn on SSH protection
+port     = ssh          # Monitors SSH port
+filter   = sshd         # Use the default SSH filter rules
 logpath  = /var/log/secure
 maxretry = 5
 EOF
 
+# Enable and start fail2ban service.
 systemctl enable fail2ban
 systemctl restart fail2ban
 
@@ -141,14 +162,14 @@ echo "[+] Fail2ban enabled and protecting SSH."
 
 echo "[+] Setting basic password policy..."
 
-# /etc/login.defs – password aging
+# Enforce password aging (90 days, warning at 7 days, etc.).
 sed -i.bak \
     -e 's/^PASS_MAX_DAYS.*/PASS_MAX_DAYS   90/' \
     -e 's/^PASS_MIN_DAYS.*/PASS_MIN_DAYS   1/' \
     -e 's/^PASS_WARN_AGE.*/PASS_WARN_AGE   7/' \
     /etc/login.defs
 
-# Enforce password complexity via pam_pwquality
+# Enforce password complexity.
 if grep -q "pam_pwquality.so" /etc/pam.d/system-auth; then
     sed -i 's/^password    requisite     pam_pwquality.so.*/password    requisite     pam_pwquality.so try_first_pass local_users_only retry=3 authtok_type=/' /etc/pam.d/system-auth
 else
@@ -161,17 +182,21 @@ echo "[+] Password policy updated (aging + basic complexity)."
 
 echo "[+] Enabling auditd..."
 
+# Install audit daemon (tracks important file accesses).
 $PKG_MGR -y install audit
+
+# Enable and start audit logging.
 systemctl enable auditd
 systemctl start auditd
 
-# Example of a simple audit rule: watch /etc/passwd changes
+# Add audit rules to watch critical config files.
 cat >/etc/audit/rules.d/hardening.rules <<'EOF'
--w /etc/passwd -p wa -k passwd_changes
--w /etc/shadow -p wa -k shadow_changes
--w /etc/sudoers -p wa -k sudoers_changes
+-w /etc/passwd -p wa -k passwd_changes      # Watch for writes/changes to passwd
+-w /etc/shadow -p wa -k shadow_changes      # Watch password hashes file
+-w /etc/sudoers -p wa -k sudoers_changes    # Watch sudo permissions file
 EOF
 
+# Load audit rules.
 augenrules --load
 
 echo "[+] Auditd enabled with some basic rules."
@@ -182,26 +207,28 @@ echo "[+] Applying basic network sysctl hardening..."
 
 SYSCTL_FILE="/etc/sysctl.d/99-hardening.conf"
 
+# Create sysctl configuration file with network protections.
 cat >"$SYSCTL_FILE" <<'EOF'
-# Enable SYN cookies
+# Enable SYN cookies to prevent SYN flood attacks
 net.ipv4.tcp_syncookies = 1
 
-# Ignore broadcast ICMP (avoid smurf attack)
+# Ignore broadcast ICMP (prevents Smurf attacks)
 net.ipv4.icmp_echo_ignore_broadcasts = 1
 
-# Disable source routing
+# Disable source routing (prevents attackers specifying return path)
 net.ipv4.conf.all.accept_source_route = 0
 net.ipv4.conf.default.accept_source_route = 0
 
-# Disable ICMP redirects
+# Disable ICMP redirects (prevents MITM spoofing)
 net.ipv4.conf.all.accept_redirects = 0
 net.ipv4.conf.default.accept_redirects = 0
 
-# Log suspicious packets
+# Log suspicious / malformed packets
 net.ipv4.conf.all.log_martians = 1
 net.ipv4.conf.default.log_martians = 1
 EOF
 
+# Apply the changes system-wide.
 sysctl --system
 
 echo "[+] Network sysctl hardening applied."
@@ -224,3 +251,4 @@ echo "IMPORTANT:"
 echo " - Review /etc/ssh/sshd_config before locking out password auth."
 echo " - Test everything in a VM or lab box before using in production."
 echo "============================================================"
+
