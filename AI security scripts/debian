@@ -1,0 +1,65 @@
+#!/bin/bash
+
+# --- Basic Debian Security Setup Script ---
+# WARNING: Ensure you have console access. Incorrect UFW configuration can lock you out.
+
+# Exit immediately if a command exits with a non-zero status
+set -e
+
+echo "Starting basic security setup for Debian-based server..."
+
+# Check if the script is run as root
+if [ "$EUID" -ne 0 ]; then
+    echo "Please run as root (use sudo)."
+    exit 1
+fi
+
+## 1. Automated Security Updates (unattended-upgrades)
+echo "--- 1. Configuring Automated Updates ---"
+apt update && apt upgrade -y
+apt install unattended-upgrades apt-listchanges -y
+# Enable automatic upgrades via a reconfigure command
+dpkg-reconfigure --priority=low unattended-upgrades
+echo "Automated updates configured."
+
+## 2. Firewall Management (UFW)
+echo "--- 2. Setting Up UFW Firewall ---"
+apt install ufw -y
+
+# Set default policies to deny incoming and allow outgoing traffic
+ufw default deny incoming
+ufw default allow outgoing
+
+# !!! CRITICAL STEP: ALLOW SSH !!!
+# If you use a non-standard SSH port, change 'ssh' to your port number (e.g., '2222/tcp')
+ufw allow ssh 
+
+# Example: Allow standard web ports if needed
+# ufw allow http
+# ufw allow https
+
+# Enable the firewall (force enable to bypass interactive prompt)
+echo "Enabling UFW firewall..."
+ufw --force enable
+ufw status verbose
+echo "UFW firewall enabled and configured."
+
+## 3. Brute-Force Protection (Fail2Ban)
+echo "--- 3. Installing and Configuring Fail2Ban ---"
+apt install fail2ban -y
+
+# Copy default config to local file for customization
+cp /etc/fail2ban/jail.conf /etc/fail2ban/jail.local
+
+# Optional: Customize default ban time in jail.local if desired (e.g., bantime = 1h)
+# sed -i 's/bantime = 10m/bantime = 1h/g' /etc/fail2ban/jail.local
+
+# Ensure the sshd jail is enabled (it usually is by default, but this makes sure)
+sed -i '/\[sshd\]/,/enabled =/s/enabled = false/enabled = true/' /etc/fail2ban/jail.local
+
+# Restart Fail2Ban service to apply changes
+systemctl enable fail2ban
+systemctl restart fail2ban
+echo "Fail2Ban installed and running."
+
+echo "Basic server security script finished successfully!"
