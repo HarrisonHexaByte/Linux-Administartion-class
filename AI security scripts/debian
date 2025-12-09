@@ -8,7 +8,7 @@ set -e
 
 echo "Starting basic security setup for Debian-based server..."
 
-# Check if the script is run as root
+# Check if the script is run as root by comparing the effective user ID ($EUID) to 0 (root's ID).
 if [ "$EUID" -ne 0 ]; then
     echo "Please run as root (use sudo)."
     exit 1
@@ -16,21 +16,26 @@ fi
 
 ## 1. Automated Security Updates (unattended-upgrades)
 echo "--- 1. Configuring Automated Updates ---"
+# Update the package lists and immediately upgrade all installed packages
 apt update && apt upgrade -y
+# Install the necessary packages for automated, unattended updates
 apt install unattended-upgrades apt-listchanges -y
-# Enable automatic upgrades via a reconfigure command
+# Enable automatic upgrades via a reconfigure command, prompting user interaction at a low priority
 dpkg-reconfigure --priority=low unattended-upgrades
 echo "Automated updates configured."
 
 ## 2. Firewall Management (UFW)
 echo "--- 2. Setting Up UFW Firewall ---"
+# Install the Uncomplicated Firewall (UFW) utility
 apt install ufw -y
 
-# Set default policies to deny incoming and allow outgoing traffic
+# Set the default policy to deny all incoming traffic
 ufw default deny incoming
+# Set the default policy to allow all outgoing traffic from the server
 ufw default allow outgoing
 
 # !!! CRITICAL STEP: ALLOW SSH !!!
+# Allow traffic on the standard SSH port (22) or 'ssh' alias to prevent lockouts.
 # If you use a non-standard SSH port, change 'ssh' to your port number (e.g., '2222/tcp')
 ufw allow ssh 
 
@@ -38,27 +43,32 @@ ufw allow ssh
 # ufw allow http
 # ufw allow https
 
-# Enable the firewall (force enable to bypass interactive prompt)
+# Enable the firewall (the --force flag prevents an interactive confirmation prompt)
 echo "Enabling UFW firewall..."
 ufw --force enable
+# Display the current status of the firewall rules
 ufw status verbose
 echo "UFW firewall enabled and configured."
 
 ## 3. Brute-Force Protection (Fail2Ban)
 echo "--- 3. Installing and Configuring Fail2Ban ---"
+# Install the Fail2Ban package
 apt install fail2ban -y
 
-# Copy default config to local file for customization
+# Copy the default configuration file to jail.local. This is best practice,
+# as the 'jail.conf' file may be overwritten during package updates.
 cp /etc/fail2ban/jail.conf /etc/fail2ban/jail.local
 
 # Optional: Customize default ban time in jail.local if desired (e.g., bantime = 1h)
 # sed -i 's/bantime = 10m/bantime = 1h/g' /etc/fail2ban/jail.local
 
-# Ensure the sshd jail is enabled (it usually is by default, but this makes sure)
+# Ensure the sshd jail is enabled by using 'sed' to replace 'enabled = false' with 'enabled = true'
+# within the [sshd] section of the config file.
 sed -i '/\[sshd\]/,/enabled =/s/enabled = false/enabled = true/' /etc/fail2ban/jail.local
 
-# Restart Fail2Ban service to apply changes
+# Enable the Fail2Ban service to start on boot
 systemctl enable fail2ban
+# Restart the Fail2Ban service to apply the configuration changes
 systemctl restart fail2ban
 echo "Fail2Ban installed and running."
 
