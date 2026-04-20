@@ -1,0 +1,86 @@
+#!/bin/bash
+
+echo " START OF NETWORK DATA DUMP "
+
+# Display the fully qualified domain name of the machine and DNS resolver config
+echo -e "\n--- HOSTNAME & DNS ---"
+hostname -f
+cat /etc/resolv.conf
+
+# Show all IP addresses assigned to all network interfaces
+echo -e "\n--- IP ADDRESSES ---"
+ip addr show
+
+# Display the kernel routing table (default gateway, static routes, etc.)
+echo -e "\n--- ROUTING TABLE ---"
+ip route show
+
+# Show the ARP cache — maps IP addresses to MAC addresses on the local network
+echo -e "\n--- ARP TABLE ---"
+arp -n
+
+# Display interface-level statistics: packets sent/received, errors, dropped, etc.
+echo -e "\n--- NETWORK INTERFACES (stats) ---"
+ip -s link
+
+# List all active TCP/UDP connections with process names and PIDs
+# Flags: -t=TCP, -u=UDP, -n=numeric, -a=all, -p=process
+echo -e "\n--- ACTIVE CONNECTIONS ---"
+ss -tunap
+
+# Show only ports currently listening for incoming connections with process info
+# Flags: -t=TCP, -l=listening, -n=numeric, -p=process
+echo -e "\n--- LISTENING PORTS ---"
+ss -tlnp
+
+# Dump all iptables firewall rules with packet/byte counters
+# '2>/dev/null' redirects stderr (error messages, fd 2) to /dev/null (a discard sink)
+# This silences errors if iptables is missing or the user lacks root permission
+# '||' means: if the left command fails (non-zero exit), run the right side instead
+echo -e "\n--- FIREWALL RULES (iptables) ---"
+iptables -L -n -v 2>/dev/null || echo "iptables not available or no permission"
+
+# Show active firewalld zones, services, and ports if firewalld is running
+# '2>/dev/null' suppresses errors if firewalld is not installed or the daemon is stopped
+# '||' provides a fallback message so the dump still completes cleanly
+echo -e "\n--- FIREWALLD STATUS ---"
+firewall-cmd --list-all 2>/dev/null || echo "firewalld not running or not installed"
+
+# List all NetworkManager connections (active and inactive)
+# '2>/dev/null' hides errors if nmcli is not installed or NetworkManager is not running
+echo -e "\n--- NETWORK MANAGER CONNECTIONS ---"
+nmcli connection show 2>/dev/null || echo "NetworkManager not available"
+
+# Read and print all interface config files (IP, gateway, DNS, BOOTPROTO, etc.)
+# First 'ls' lists the files — '2>/dev/null' suppresses "No such file" if none exist
+# Second 'grep -h ""' prints all file contents — '2>/dev/null' hides any read errors
+echo -e "\n--- INTERFACE CONFIG FILES ---"
+ls /etc/sysconfig/network-scripts/ifcfg-* 2>/dev/null && \
+  grep -h "" /etc/sysconfig/network-scripts/ifcfg-* 2>/dev/null
+
+# Print static hostname-to-IP mappings defined locally on this machine
+echo -e "\n--- /etc/hosts ---"
+cat /etc/hosts
+
+# Detect the default gateway from the routing table and ping it 3 times
+# Useful for confirming Layer 3 connectivity to the local network
+# '2>/dev/null' suppresses ping error output (e.g., "Network unreachable")
+# '||' catches a failed ping and prints a human-readable fallback message instead
+echo -e "\n--- PING GATEWAY TEST ---"
+GW=$(ip route | awk '/default/ {print $3; exit}')
+echo "Gateway: $GW"
+ping -c 3 $GW 2>/dev/null || echo "Ping failed or no gateway found"
+
+# Test DNS resolution by looking up google.com
+# Tries nslookup first, falls back to dig if not installed
+# Each '2>/dev/null' suppresses errors if that tool is not installed
+# Chained '||' means: try nslookup → if fail, try dig → if fail, print message
+echo -e "\n--- DNS RESOLUTION TEST ---"
+nslookup google.com 2>/dev/null || dig google.com 2>/dev/null || echo "DNS tools not available"
+
+# List all currently running systemd services related to networking
+# Covers: NetworkManager, firewall, DHCP, DNS, SSH, etc.
+echo -e "\n--- NETWORK SERVICES (systemd) ---"
+systemctl list-units --type=service --state=running | grep -Ei "network|firewall|nm|dhcp|dns|ssh"
+
+echo " END OF Network DUMP"
